@@ -1,22 +1,18 @@
-# app.py
-import os
-import re
+# data_check.py - Streamlit 版本
+import streamlit as st
 import pandas as pd
 import numpy as np
-from flask import Flask, render_template, request, send_file, jsonify
-from werkzeug.utils import secure_filename
-from datetime import datetime
-import openpyxl
 from io import BytesIO
 import tempfile
+import os
+from datetime import datetime
 
-app = Flask(__name__)
-app.config['UPLOAD_FOLDER'] = 'uploads'
-app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max
-app.secret_key = 'your-secret-key-here'
-
-# 確保上傳目錄存在
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+# 頁面設定
+st.set_page_config(
+    page_title="成品庫存資料檢測系統",
+    page_icon="📊",
+    layout="wide"
+)
 
 # 定義表頭規則
 HEADER_RULES = {
@@ -36,14 +32,12 @@ HEADER_RULES = {
     'N': {'name': 'YYMM', 'required': True}
 }
 
-# 欄位列號映射
 COLUMN_MAPPING = {
     'A': 0, 'B': 1, 'C': 2, 'D': 3, 'E': 4,
     'F': 5, 'G': 6, 'H': 7, 'I': 8, 'J': 9,
     'K': 10, 'L': 11, 'M': 12, 'N': 13
 }
 
-# 定義有效鞋型
 VALID_SHOE_KIND = {'FL', 'FR', 'UL', 'UR', 'BL', 'BR'}
 
 def validate_year_month(yymm):
@@ -55,7 +49,6 @@ def validate_year_month(yymm):
         return False
     if not yymm_str.isdigit():
         return False
-    year = int(yymm_str[:2])
     month = int(yymm_str[2:])
     if month < 1 or month > 12:
         return False
@@ -73,7 +66,6 @@ def validate_stock_qty(value):
         val = float(value)
         if val < 0:
             return False
-        # 檢查是否為0.5的倍數
         return abs(val * 2 - round(val * 2)) < 0.0001
     except (ValueError, TypeError):
         return False
@@ -106,7 +98,7 @@ def validate_barcode_unique(df, sheet_name, errors):
             })
 
 def validate_rfid_unique(df, sheet_name, errors):
-    """驗證RFID唯一性（如果有值）"""
+    """驗證RFID唯一性"""
     rfid_col = COLUMN_MAPPING['C']
     if rfid_col >= len(df.columns):
         return
@@ -266,18 +258,18 @@ def validate_data(df, sheet_name, errors):
                             'value': str(value)
                         })
 
-def analyze_file(file_path):
+def analyze_file(uploaded_file):
     """分析上傳的檔案"""
     errors = []
     total_records = 0
-    error_records = set()
     
     try:
-        excel_file = pd.ExcelFile(file_path)
+        # 讀取Excel檔案的所有工作表
+        excel_file = pd.ExcelFile(uploaded_file)
         sheet_names = excel_file.sheet_names
         
         for sheet_name in sheet_names:
-            df = pd.read_excel(file_path, sheet_name=sheet_name, header=0)
+            df = pd.read_excel(uploaded_file, sheet_name=sheet_name, header=0)
             
             if len(df) == 0:
                 errors.append({
@@ -311,12 +303,11 @@ def analyze_file(file_path):
             'value': str(e)
         })
     
-    error_count = len(errors)
     error_records_count = len(set(f"{e['sheet']}-{e['row']}" for e in errors if e['row'] != 1 and e['row'] != '-'))
     
     return {
         'total_records': total_records,
-        'error_count': error_count,
+        'error_count': len(errors),
         'error_records_count': error_records_count,
         'errors': errors
     }
@@ -362,61 +353,118 @@ def generate_error_excel(errors):
     output.seek(0)
     return output
 
-@app.route('/')
-def index():
-    return render_template('index.html')
-
-@app.route('/upload', methods=['POST'])
-def upload_file():
-    if 'file' not in request.files:
-        return jsonify({'error': '沒有選擇檔案'}), 400
+# ============ Streamlit UI ============
+def main():
+    st.title("📊 成品庫存開賬資料檢測系統")
+    st.markdown("---")
     
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({'error': '沒有選擇檔案'}), 400
+    # 側邊欄說明
+    with st.sidebar:
+        st.header("📋 檢測規則說明")
+        st.markdown("""
+        ### 表頭結構要求
+        - A欄：可以為空
+        - B欄：BARCODE (必填，唯一)
+        - C欄：RFID (可為空，有值時須唯一)
+        - D欄：倉庫代號 (必填)
+        - E欄：儲位代號 (必填)
+        - F欄：品牌 (必填，固定為13)
+        - G欄：MODEL_NAME (必填)
+        - H欄：ARTICLE (必填)
+        - I欄：COLOR_CODE (必填)
+        - J欄：底模 (可為空)
+        - K欄：size (必填)
+        - L欄：SHOE_KIND (必填，FL/FR/UL/UR/BL/BR)
+        - M欄：STOCK_QTY (必填，正數且為0.5倍數)
+        - N欄：YYMM (必填，4位數字年月)
+        """)
     
-    if not file.filename.endswith(('.xlsx', '.xls', '.csv')):
-        return jsonify({'error': '檔案格式不支援，請上傳 Excel (.xlsx, .xls) 或 CSV 檔案'}), 400
+    # 上傳區域
+    uploaded_file = st.file_uploader(
+        "請選擇或拖拽上傳您的 Excel / CSV 檔案",
+        type=['xlsx', 'xls', 'csv'],
+        help="支援 .xlsx, .xls, .csv 格式"
+    )
     
-    try:
-        filename = secure_filename(file.filename)
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        file.save(filepath)
+    if uploaded_file is not None:
+        # 顯示檔案資訊
+        st.info(f"📄 已上傳：{uploaded_file.name} ({uploaded_file.size / 1024:.1f} KB)")
         
-        result = analyze_file(filepath)
+        # 執行檢測
+        with st.spinner("正在檢測中，請稍候..."):
+            result = analyze_file(uploaded_file)
         
-        error_excel = generate_error_excel(result['errors'])
+        # 顯示檢測報告
+        st.markdown("---")
+        st.header("📋 檢測報告與數據統計")
         
-        response = {
-            'total_records': result['total_records'],
-            'error_count': result['error_count'],
-            'error_records_count': result['error_records_count'],
-            'has_errors': result['error_count'] > 0,
-            'errors': result['errors'][:1000]
-        }
+        # 統計卡片
+        col1, col2, col3, col4 = st.columns(4)
         
-        if error_excel:
-            error_filename = f"error_list_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-            error_path = os.path.join(app.config['UPLOAD_FOLDER'], error_filename)
-            with open(error_path, 'wb') as f:
-                f.write(error_excel.getvalue())
-            response['error_file'] = f'/download/{error_filename}'
+        with col1:
+            st.metric("📊 總檢測筆數", result['total_records'])
         
-        os.remove(filepath)
+        with col2:
+            correct_count = result['total_records'] - result['error_records_count']
+            st.metric("✅ 正確通過筆數", correct_count)
         
-        return jsonify(response)
+        with col3:
+            st.metric("❌ 發生異常筆數", result['error_records_count'])
         
-    except Exception as e:
-        return jsonify({'error': f'處理檔案時發生錯誤：{str(e)}'}), 500
+        with col4:
+            st.metric("⚠️ 錯誤項目總數", result['error_count'])
+        
+        # 錯誤明細
+        st.markdown("---")
+        
+        if result['error_count'] == 0:
+            st.success("🎉 恭喜！未發現異常，所有資料皆通過檢測！")
+        else:
+            st.warning(f"⚠️ 發現 {result['error_count']} 個異常項目")
+            
+            # 顯示錯誤表格
+            if result['errors']:
+                df_errors = pd.DataFrame(result['errors'])
+                
+                # 重新命名欄位
+                df_errors_display = df_errors.rename(columns={
+                    'sheet': '頁簽名稱',
+                    'row': 'EXCEL 列數',
+                    'column': 'EXCEL 欄數',
+                    'field': '異常欄位',
+                    'error_type': '錯誤類型',
+                    'message': '錯誤描述',
+                    'suggestion': '系統建議',
+                    'value': '實際抓取內容'
+                })
+                
+                # 使用 st.dataframe 顯示
+                st.dataframe(
+                    df_errors_display,
+                    use_container_width=True,
+                    height=400,
+                    column_config={
+                        "頁簽名稱": st.column_config.TextColumn("頁簽名稱", width="small"),
+                        "EXCEL 列數": st.column_config.TextColumn("EXCEL 列數", width="small"),
+                        "EXCEL 欄數": st.column_config.TextColumn("EXCEL 欄數", width="small"),
+                        "異常欄位": st.column_config.TextColumn("異常欄位", width="small"),
+                        "錯誤類型": st.column_config.TextColumn("錯誤類型", width="small"),
+                        "錯誤描述": st.column_config.TextColumn("錯誤描述", width="medium"),
+                        "系統建議": st.column_config.TextColumn("系統建議", width="medium"),
+                        "實際抓取內容": st.column_config.TextColumn("實際抓取內容", width="small"),
+                    }
+                )
+                
+                # 產生並下載錯誤清單
+                error_excel = generate_error_excel(result['errors'])
+                if error_excel:
+                    st.download_button(
+                        label="📥 匯出錯誤清單 (Excel)",
+                        data=error_excel,
+                        file_name=f"error_list_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True
+                    )
 
-@app.route('/download/<filename>')
-def download_file(filename):
-    try:
-        return send_file(os.path.join(app.config['UPLOAD_FOLDER'], filename), 
-                        as_attachment=True, 
-                        download_name=filename)
-    except Exception as e:
-        return f'下載失敗：{str(e)}', 404
-
-if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+if __name__ == "__main__":
+    main()
