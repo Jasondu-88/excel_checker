@@ -1,18 +1,88 @@
-# data_check.py - Streamlit 版本
+# data_check.py
 import streamlit as st
 import pandas as pd
 import numpy as np
 from io import BytesIO
-import tempfile
-import os
 from datetime import datetime
+import re
 
 # 頁面設定
 st.set_page_config(
     page_title="成品庫存資料檢測系統",
     page_icon="📊",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
+
+# 自訂 CSS 樣式
+st.markdown("""
+<style>
+    .main-header {
+        text-align: center;
+        padding: 1rem 0;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 10px;
+        color: white;
+        margin-bottom: 2rem;
+    }
+    .stat-card {
+        background: #f8f9ff;
+        padding: 1.5rem;
+        border-radius: 10px;
+        border-left: 4px solid #667eea;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .stat-number {
+        font-size: 2rem;
+        font-weight: bold;
+        color: #333;
+    }
+    .stat-label {
+        color: #666;
+        font-size: 0.9rem;
+    }
+    .error-stat {
+        border-left-color: #f44336;
+    }
+    .success-stat {
+        border-left-color: #4caf50;
+    }
+    .warning-stat {
+        border-left-color: #ff9800;
+    }
+    .error-table {
+        font-size: 0.9rem;
+    }
+    .download-btn {
+        background: #4caf50;
+        color: white;
+        padding: 0.5rem 2rem;
+        border-radius: 25px;
+        text-decoration: none;
+        font-weight: 600;
+        border: none;
+        cursor: pointer;
+    }
+    .download-btn:hover {
+        background: #388e3c;
+    }
+    .success-box {
+        background: #d4edda;
+        border: 1px solid #c3e6cb;
+        border-radius: 10px;
+        padding: 2rem;
+        text-align: center;
+    }
+    .error-box {
+        background: #f8d7da;
+        border: 1px solid #f5c6cb;
+        border-radius: 10px;
+        padding: 1.5rem;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# ============ 核心檢測函數 ============
 
 # 定義表頭規則
 HEADER_RULES = {
@@ -32,24 +102,35 @@ HEADER_RULES = {
     'N': {'name': 'YYMM', 'required': True}
 }
 
+# 欄位列號映射
 COLUMN_MAPPING = {
     'A': 0, 'B': 1, 'C': 2, 'D': 3, 'E': 4,
     'F': 5, 'G': 6, 'H': 7, 'I': 8, 'J': 9,
     'K': 10, 'L': 11, 'M': 12, 'N': 13
 }
 
+# 定義有效鞋型
 VALID_SHOE_KIND = {'FL', 'FR', 'UL', 'UR', 'BL', 'BR'}
 
+# 預期表頭列表（用於顯示）
+EXPECTED_HEADERS = [rule['name'] for rule in HEADER_RULES.values()]
+
 def validate_year_month(yymm):
-    """驗證YYMM格式"""
+    """驗證YYMM格式（6位字符型年月）"""
     if not yymm:
         return False
     yymm_str = str(yymm).strip()
-    if len(yymm_str) != 4:
+    # 檢查是否為6位數字
+    if len(yymm_str) != 6:
         return False
     if not yymm_str.isdigit():
         return False
-    month = int(yymm_str[2:])
+    # 前4位為年，後2位為月
+    year = int(yymm_str[:4])
+    month = int(yymm_str[4:])
+    # 年份範圍：2000-2099
+    if year < 2000 or year > 2099:
+        return False
     if month < 1 or month > 12:
         return False
     return True
@@ -66,6 +147,7 @@ def validate_stock_qty(value):
         val = float(value)
         if val < 0:
             return False
+        # 檢查是否為0.5的倍數
         return abs(val * 2 - round(val * 2)) < 0.0001
     except (ValueError, TypeError):
         return False
@@ -76,10 +158,12 @@ def validate_barcode_unique(df, sheet_name, errors):
     if barcode_col >= len(df.columns):
         return
     
+    # 獲取BARCODE欄位數據
     barcodes = df.iloc[:, barcode_col].dropna()
     if len(barcodes) == 0:
         return
     
+    # 檢查重複值
     unique, counts = np.unique(barcodes, return_counts=True)
     duplicates = unique[counts > 1]
     
@@ -98,7 +182,7 @@ def validate_barcode_unique(df, sheet_name, errors):
             })
 
 def validate_rfid_unique(df, sheet_name, errors):
-    """驗證RFID唯一性"""
+    """驗證RFID唯一性（如果有值）"""
     rfid_col = COLUMN_MAPPING['C']
     if rfid_col >= len(df.columns):
         return
@@ -127,21 +211,22 @@ def validate_rfid_unique(df, sheet_name, errors):
 def validate_header(df, sheet_name, errors):
     """驗證表頭結構"""
     headers = df.columns.tolist()
-    expected_headers = [rule['name'] for rule in HEADER_RULES.values()]
     
-    if len(headers) < len(expected_headers):
+    # 檢查欄位數量
+    if len(headers) < len(EXPECTED_HEADERS):
         errors.append({
             'sheet': sheet_name,
             'row': 1,
             'column': '-',
             'field': '表頭結構',
             'error_type': '表頭結構異常',
-            'message': f'欄位數量不足，預期 {len(expected_headers)} 欄，實際 {len(headers)} 欄',
-            'suggestion': f'請確認表頭包含以下欄位：{", ".join(expected_headers)}',
+            'message': f'欄位數量不足，預期 {len(EXPECTED_HEADERS)} 欄，實際 {len(headers)} 欄',
+            'suggestion': f'請確認表頭包含以下欄位：{", ".join(EXPECTED_HEADERS)}',
             'value': f'實際有 {len(headers)} 欄'
         })
         return False
     
+    # 檢查每個欄位
     for col_letter, rule in HEADER_RULES.items():
         col_idx = COLUMN_MAPPING[col_letter]
         if col_idx >= len(headers):
@@ -159,7 +244,10 @@ def validate_header(df, sheet_name, errors):
         
         actual_header = str(headers[col_idx]).strip()
         expected = rule['name']
+        
+        # 檢查欄位名稱是否匹配
         if actual_header != expected:
+            # 如果是"可以為空"欄位，只要不是空值就報錯
             if rule['required'] or (actual_header != '' and actual_header != expected):
                 errors.append({
                     'sheet': sheet_name,
@@ -190,6 +278,7 @@ def validate_data(df, sheet_name, errors):
             value = row.iloc[col_idx] if col_idx < len(row) else np.nan
             field_name = rule['name']
             
+            # 驗證必要欄位不能為空
             if rule['required']:
                 if pd.isna(value) or str(value).strip() == '':
                     errors.append({
@@ -204,6 +293,7 @@ def validate_data(df, sheet_name, errors):
                     })
                     continue
             
+            # 特定欄位驗證
             if field_name == '品牌':
                 if not pd.isna(value) and str(value).strip() != '13':
                     errors.append({
@@ -212,7 +302,7 @@ def validate_data(df, sheet_name, errors):
                         'column': col_letter,
                         'field': field_name,
                         'error_type': '資料錯誤',
-                        'message': f'品牌值應為 "13"',
+                        'message': f'品牌值應為 "13"，實際為 "{value}"',
                         'suggestion': '請將品牌欄位設為 "13"',
                         'value': str(value)
                     })
@@ -254,7 +344,7 @@ def validate_data(df, sheet_name, errors):
                             'field': field_name,
                             'error_type': '資料錯誤',
                             'message': f'YYMM "{value}" 格式錯誤',
-                            'suggestion': 'YYMM必須為4位數字，前2位為年，後2位為月（如：2407）',
+                            'suggestion': 'YYMM必須為6位數字，前4位為年，後2位為月（如：202407）',
                             'value': str(value)
                         })
 
@@ -262,14 +352,17 @@ def analyze_file(uploaded_file):
     """分析上傳的檔案"""
     errors = []
     total_records = 0
+    sheet_count = 0
     
     try:
-        # 讀取Excel檔案的所有工作表
-        excel_file = pd.ExcelFile(uploaded_file)
-        sheet_names = excel_file.sheet_names
+        # 根據檔案類型讀取
+        file_extension = uploaded_file.name.split('.')[-1].lower()
         
-        for sheet_name in sheet_names:
-            df = pd.read_excel(uploaded_file, sheet_name=sheet_name, header=0)
+        if file_extension == 'csv':
+            # 讀取CSV檔案
+            df = pd.read_csv(uploaded_file, header=0)
+            sheet_name = 'Sheet1'
+            sheet_count = 1
             
             if len(df) == 0:
                 errors.append({
@@ -282,14 +375,40 @@ def analyze_file(uploaded_file):
                     'suggestion': '請確認資料已正確填入',
                     'value': '空工作表'
                 })
-                continue
+            else:
+                total_records += len(df)
+                validate_header(df, sheet_name, errors)
+                validate_barcode_unique(df, sheet_name, errors)
+                validate_rfid_unique(df, sheet_name, errors)
+                validate_data(df, sheet_name, errors)
+        
+        else:
+            # 讀取Excel檔案的所有工作表
+            excel_file = pd.ExcelFile(uploaded_file)
+            sheet_names = excel_file.sheet_names
+            sheet_count = len(sheet_names)
             
-            total_records += len(df)
-            
-            validate_header(df, sheet_name, errors)
-            validate_barcode_unique(df, sheet_name, errors)
-            validate_rfid_unique(df, sheet_name, errors)
-            validate_data(df, sheet_name, errors)
+            for sheet_name in sheet_names:
+                df = pd.read_excel(uploaded_file, sheet_name=sheet_name, header=0)
+                
+                if len(df) == 0:
+                    errors.append({
+                        'sheet': sheet_name,
+                        'row': 1,
+                        'column': '-',
+                        'field': '空白工作表',
+                        'error_type': '資料錯誤',
+                        'message': '工作表為空',
+                        'suggestion': '請確認資料已正確填入',
+                        'value': '空工作表'
+                    })
+                    continue
+                
+                total_records += len(df)
+                validate_header(df, sheet_name, errors)
+                validate_barcode_unique(df, sheet_name, errors)
+                validate_rfid_unique(df, sheet_name, errors)
+                validate_data(df, sheet_name, errors)
         
     except Exception as e:
         errors.append({
@@ -303,10 +422,16 @@ def analyze_file(uploaded_file):
             'value': str(e)
         })
     
-    error_records_count = len(set(f"{e['sheet']}-{e['row']}" for e in errors if e['row'] != 1 and e['row'] != '-'))
+    # 計算異常筆數（排除表頭錯誤和系統錯誤）
+    error_records_count = len(set(
+        f"{e['sheet']}-{e['row']}" 
+        for e in errors 
+        if e.get('row') not in [1, '-'] and e.get('error_type') != '表頭結構異常'
+    ))
     
     return {
         'total_records': total_records,
+        'sheet_count': sheet_count,
         'error_count': len(errors),
         'error_records_count': error_records_count,
         'errors': errors
@@ -321,8 +446,8 @@ def generate_error_excel(errors):
     
     df_errors = df_errors.rename(columns={
         'sheet': '頁簽名稱',
-        'row': 'EXCEL 列數',
-        'column': 'EXCEL 欄數',
+        'row': 'EXCEL列數',
+        'column': 'EXCEL欄數',
         'field': '異常欄位',
         'error_type': '錯誤類型',
         'message': '錯誤描述',
@@ -330,13 +455,14 @@ def generate_error_excel(errors):
         'value': '實際抓取內容'
     })
     
-    columns_order = ['頁簽名稱', 'EXCEL 列數', 'EXCEL 欄數', '異常欄位', '錯誤類型', '錯誤描述', '系統建議', '實際抓取內容']
+    columns_order = ['頁簽名稱', 'EXCEL列數', 'EXCEL欄數', '異常欄位', '錯誤類型', '錯誤描述', '系統建議', '實際抓取內容']
     df_errors = df_errors[columns_order]
     
     output = BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df_errors.to_excel(writer, sheet_name='錯誤清單', index=False)
         
+        # 調整欄位寬度
         worksheet = writer.sheets['錯誤清單']
         for column in worksheet.columns:
             max_length = 0
@@ -354,71 +480,159 @@ def generate_error_excel(errors):
     return output
 
 # ============ Streamlit UI ============
+
 def main():
-    st.title("📊 成品庫存開賬資料檢測系統")
-    st.markdown("---")
+    # 標題區域
+    st.markdown("""
+    <div class="main-header">
+        <h1>📊 成品庫存開賬資料檢測系統</h1>
+        <p style="font-size: 1.1rem; opacity: 0.9;">支援跨頁簽掃描、Barcode 唯一值鎖定及多項合規驗證</p>
+    </div>
+    """, unsafe_allow_html=True)
     
-    # 側邊欄說明
+    # 側邊欄 - 檢測規則說明
     with st.sidebar:
-        st.header("📋 檢測規則說明")
+        st.markdown("### 📋 檢測規則說明")
+        
+        with st.expander("📌 表頭結構要求", expanded=True):
+            st.markdown("""
+            | 欄位 | 名稱 | 必填 |
+            |:---:|:---|:---:|
+            | A | 可以為空 | ❌ |
+            | B | **BARCODE** | ✅ |
+            | C | RFID | ❌ |
+            | D | **倉庫代號** | ✅ |
+            | E | **儲位代號** | ✅ |
+            | F | **品牌** | ✅ |
+            | G | **MODEL_NAME** | ✅ |
+            | H | **ARTICLE** | ✅ |
+            | I | **COLOR_CODE** | ✅ |
+            | J | 底模 | ❌ |
+            | K | **size** | ✅ |
+            | L | **SHOE_KIND** | ✅ |
+            | M | **STOCK_QTY** | ✅ |
+            | N | **YYMM** | ✅ |
+            """)
+        
+        with st.expander("🔍 資料驗證規則", expanded=True):
+            st.markdown("""
+            **BARCODE**
+            - 不能為空值
+            - 同一檔案內不得重複
+            
+            **RFID**
+            - 可以為空值
+            - 有值時不得重複
+            
+            **品牌**
+            - 固定值為 **13**
+            
+            **SHOE_KIND**
+            - 只能為：FL, FR, UL, UR, BL, BR
+            
+            **STOCK_QTY**
+            - 正數且為 0.5 的倍數
+            
+            **YYMM**
+            - 6位數字（如：202407）
+            - 前4位年，後2位月
+            """)
+        
+        st.markdown("---")
+        st.caption("💡 支援 .xlsx, .xls, .csv 格式")
+    
+    # 主要內容區域
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        uploaded_file = st.file_uploader(
+            "📁 請選擇或拖拽上傳您的 Excel / CSV 檔案",
+            type=['xlsx', 'xls', 'csv'],
+            help="支援 .xlsx, .xls, .csv 格式，自動掃描所有頁簽"
+        )
+    
+    with col2:
         st.markdown("""
-        ### 表頭結構要求
-        - A欄：可以為空
-        - B欄：BARCODE (必填，唯一)
-        - C欄：RFID (可為空，有值時須唯一)
-        - D欄：倉庫代號 (必填)
-        - E欄：儲位代號 (必填)
-        - F欄：品牌 (必填，固定為13)
-        - G欄：MODEL_NAME (必填)
-        - H欄：ARTICLE (必填)
-        - I欄：COLOR_CODE (必填)
-        - J欄：底模 (可為空)
-        - K欄：size (必填)
-        - L欄：SHOE_KIND (必填，FL/FR/UL/UR/BL/BR)
-        - M欄：STOCK_QTY (必填，正數且為0.5倍數)
-        - N欄：YYMM (必填，4位數字年月)
-        """)
+        <div style="background: #e3f2fd; padding: 1.2rem; border-radius: 10px; margin-top: 1.8rem;">
+            <p style="margin:0; font-size:0.9rem; color:#1976d2;">
+                <strong>📌 使用說明</strong><br>
+                1. 點擊上傳按鈕選擇檔案<br>
+                2. 系統自動進行全面檢測<br>
+                3. 查看檢測報告與異常清單<br>
+                4. 下載錯誤清單進行修正
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
     
-    # 上傳區域
-    uploaded_file = st.file_uploader(
-        "請選擇或拖拽上傳您的 Excel / CSV 檔案",
-        type=['xlsx', 'xls', 'csv'],
-        help="支援 .xlsx, .xls, .csv 格式"
-    )
-    
+    # 處理上傳的檔案
     if uploaded_file is not None:
+        st.markdown("---")
+        
         # 顯示檔案資訊
-        st.info(f"📄 已上傳：{uploaded_file.name} ({uploaded_file.size / 1024:.1f} KB)")
+        file_size = uploaded_file.size / 1024
+        file_size_str = f"{file_size:.1f} KB" if file_size < 1024 else f"{file_size/1024:.2f} MB"
+        
+        st.info(f"📄 **已上傳：** {uploaded_file.name} ({file_size_str})")
         
         # 執行檢測
-        with st.spinner("正在檢測中，請稍候..."):
+        with st.spinner("🔄 正在檢測中，請稍候..."):
             result = analyze_file(uploaded_file)
         
         # 顯示檢測報告
-        st.markdown("---")
-        st.header("📋 檢測報告與數據統計")
+        st.markdown("### 📊 檢測報告與數據統計")
         
         # 統計卡片
         col1, col2, col3, col4 = st.columns(4)
         
+        correct_count = result['total_records'] - result['error_records_count']
+        
         with col1:
-            st.metric("📊 總檢測筆數", result['total_records'])
+            st.markdown(f"""
+            <div class="stat-card">
+                <div class="stat-number">{result['total_records']}</div>
+                <div class="stat-label">📊 總檢測筆數</div>
+            </div>
+            """, unsafe_allow_html=True)
         
         with col2:
-            correct_count = result['total_records'] - result['error_records_count']
-            st.metric("✅ 正確通過筆數", correct_count)
+            st.markdown(f"""
+            <div class="stat-card success-stat">
+                <div class="stat-number">{correct_count}</div>
+                <div class="stat-label">✅ 正確通過筆數</div>
+            </div>
+            """, unsafe_allow_html=True)
         
         with col3:
-            st.metric("❌ 發生異常筆數", result['error_records_count'])
+            st.markdown(f"""
+            <div class="stat-card error-stat">
+                <div class="stat-number">{result['error_records_count']}</div>
+                <div class="stat-label">❌ 發生異常筆數</div>
+            </div>
+            """, unsafe_allow_html=True)
         
         with col4:
-            st.metric("⚠️ 錯誤項目總數", result['error_count'])
+            st.markdown(f"""
+            <div class="stat-card warning-stat">
+                <div class="stat-number">{result['error_count']}</div>
+                <div class="stat-label">⚠️ 錯誤項目總數</div>
+            </div>
+            """, unsafe_allow_html=True)
         
-        # 錯誤明細
+        # 頁簽數量資訊
+        if result['sheet_count'] > 1:
+            st.caption(f"📑 共檢測 {result['sheet_count']} 個頁簽")
+        
+        # 顯示錯誤明細
         st.markdown("---")
+        st.markdown("### ❌ 異常明細清單")
         
         if result['error_count'] == 0:
-            st.success("🎉 恭喜！未發現異常，所有資料皆通過檢測！")
+            st.markdown("""
+            <div class="success-box">
+                <h2 style="color: #155724;">🎉 恭喜！未發現異常</h2>
+                <p style="color: #155724; font-size: 1.1rem;">所有資料皆通過檢測</p>
+            </div>
+            """, unsafe_allow_html=True)
         else:
             st.warning(f"⚠️ 發現 {result['error_count']} 個異常項目")
             
@@ -429,8 +643,8 @@ def main():
                 # 重新命名欄位
                 df_errors_display = df_errors.rename(columns={
                     'sheet': '頁簽名稱',
-                    'row': 'EXCEL 列數',
-                    'column': 'EXCEL 欄數',
+                    'row': 'EXCEL列數',
+                    'column': 'EXCEL欄數',
                     'field': '異常欄位',
                     'error_type': '錯誤類型',
                     'message': '錯誤描述',
@@ -445,8 +659,8 @@ def main():
                     height=400,
                     column_config={
                         "頁簽名稱": st.column_config.TextColumn("頁簽名稱", width="small"),
-                        "EXCEL 列數": st.column_config.TextColumn("EXCEL 列數", width="small"),
-                        "EXCEL 欄數": st.column_config.TextColumn("EXCEL 欄數", width="small"),
+                        "EXCEL列數": st.column_config.TextColumn("EXCEL列數", width="small"),
+                        "EXCEL欄數": st.column_config.TextColumn("EXCEL欄數", width="small"),
                         "異常欄位": st.column_config.TextColumn("異常欄位", width="small"),
                         "錯誤類型": st.column_config.TextColumn("錯誤類型", width="small"),
                         "錯誤描述": st.column_config.TextColumn("錯誤描述", width="medium"),
@@ -456,15 +670,35 @@ def main():
                 )
                 
                 # 產生並下載錯誤清單
+                st.markdown("---")
+                st.markdown("### 📥 檔案匯出")
+                
                 error_excel = generate_error_excel(result['errors'])
                 if error_excel:
-                    st.download_button(
-                        label="📥 匯出錯誤清單 (Excel)",
-                        data=error_excel,
-                        file_name=f"error_list_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True
-                    )
+                    col1, col2, col3 = st.columns([1, 2, 1])
+                    with col2:
+                        st.download_button(
+                            label="📥 匯出錯誤清單 (Excel)",
+                            data=error_excel,
+                            file_name=f"error_list_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            use_container_width=True,
+                            type="primary"
+                        )
+    
+    else:
+        # 未上傳檔案時的歡迎訊息
+        st.markdown("---")
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            st.markdown("""
+            <div style="text-align: center; padding: 2rem 0;">
+                <p style="font-size: 3rem;">📁</p>
+                <h3>歡迎使用【成品資料智慧檢測系統】</h3>
+                <p style="color: #666;">系統已就緒，支援跨頁簽掃描、Barcode 唯一值鎖定及合規驗證</p>
+                <p style="color: #999; font-size: 0.9rem;">請點擊上傳按鈕選擇您的 Excel / CSV 檔案</p>
+            </div>
+            """, unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
