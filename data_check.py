@@ -8,7 +8,7 @@ import re
 
 # 頁面設定
 st.set_page_config(
-    page_title="成品庫存資料檢測系統",
+    page_title="成品庫存資料開賬檢測工具",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -86,7 +86,6 @@ st.markdown("""
 
 # 定義表頭規則
 HEADER_RULES = {
-    'A': {'name': '可以為空', 'required': False},
     'B': {'name': 'BARCODE', 'required': True},
     'C': {'name': 'RFID', 'required': False},
     'D': {'name': '倉庫代號', 'required': True},
@@ -485,7 +484,7 @@ def main():
     # 標題區域
     st.markdown("""
     <div class="main-header">
-        <h1>📊 成品庫存開賬資料檢測系統</h1>
+        <h1>📊 成品庫存開賬資料檢測工具</h1>
         <p style="font-size: 1.1rem; opacity: 0.9;">支援跨頁簽掃描、Barcode 唯一值鎖定及多項合規驗證</p>
     </div>
     """, unsafe_allow_html=True)
