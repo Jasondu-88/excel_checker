@@ -1,454 +1,422 @@
-<!DOCTYPE html>
-<html lang="zh-TW">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>成品庫存資料檢測系統</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            padding: 20px;
-        }
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 20px;
-            padding: 40px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-        }
-        h1 {
-            color: #333;
-            margin-bottom: 10px;
-            font-size: 28px;
-        }
-        .subtitle {
-            color: #666;
-            margin-bottom: 30px;
-            font-size: 16px;
-        }
-        .upload-area {
-            border: 2px dashed #667eea;
-            border-radius: 15px;
-            padding: 60px 20px;
-            text-align: center;
-            background: #f8f9ff;
-            transition: all 0.3s ease;
-            cursor: pointer;
-        }
-        .upload-area:hover {
-            border-color: #764ba2;
-            background: #f0f0ff;
-        }
-        .upload-area.dragover {
-            border-color: #764ba2;
-            background: #e8e0ff;
-        }
-        .upload-icon {
-            font-size: 60px;
-            margin-bottom: 20px;
-        }
-        .upload-text {
-            font-size: 18px;
-            color: #555;
-            margin-bottom: 10px;
-        }
-        .upload-hint {
-            font-size: 14px;
-            color: #999;
-        }
-        #fileInput {
-            display: none;
-        }
-        #uploadBtn {
-            background: #667eea;
-            color: white;
-            border: none;
-            padding: 12px 40px;
-            border-radius: 30px;
-            font-size: 16px;
-            cursor: pointer;
-            transition: background 0.3s;
-            margin-top: 20px;
-        }
-        #uploadBtn:hover {
-            background: #764ba2;
-        }
-        #uploadBtn:disabled {
-            background: #ccc;
-            cursor: not-allowed;
-        }
-        .loading {
-            display: none;
-            text-align: center;
-            padding: 40px;
-        }
-        .spinner {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #667eea;
-            border-radius: 50%;
-            width: 50px;
-            height: 50px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 20px;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        .results {
-            display: none;
-            margin-top: 40px;
-        }
-        .stats {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-        .stat-card {
-            background: #f8f9ff;
-            padding: 20px;
-            border-radius: 12px;
-            text-align: center;
-            border-left: 4px solid #667eea;
-        }
-        .stat-number {
-            font-size: 32px;
-            font-weight: bold;
-            color: #333;
-        }
-        .stat-label {
-            color: #666;
-            font-size: 14px;
-            margin-top: 5px;
-        }
-        .stat-card.error {
-            border-left-color: #f44336;
-        }
-        .stat-card.success {
-            border-left-color: #4caf50;
-        }
-        .stat-card.warning {
-            border-left-color: #ff9800;
-        }
-        .error-section {
-            background: #fff5f5;
-            border: 1px solid #fcc;
-            border-radius: 12px;
-            padding: 20px;
-            margin-top: 20px;
-        }
-        .error-section.success {
-            background: #f0f8f0;
-            border-color: #b8d4b8;
-        }
-        .error-table-wrapper {
-            overflow-x: auto;
-            margin-top: 20px;
-        }
-        .error-table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 14px;
-        }
-        .error-table th {
-            background: #667eea;
-            color: white;
-            padding: 12px;
-            text-align: left;
-            font-weight: 600;
-        }
-        .error-table td {
-            padding: 10px 12px;
-            border-bottom: 1px solid #e0e0e0;
-        }
-        .error-table tr:hover {
-            background: #f5f5ff;
-        }
-        .error-table .error-row {
-            background: #fff0f0;
-        }
-        .error-table .error-row:hover {
-            background: #ffe8e8;
-        }
-        .download-btn {
-            display: inline-block;
-            background: #4caf50;
-            color: white;
-            padding: 12px 30px;
-            border-radius: 30px;
-            text-decoration: none;
-            font-weight: 600;
-            margin-top: 20px;
-            transition: background 0.3s;
-            border: none;
-            cursor: pointer;
-            font-size: 16px;
-        }
-        .download-btn:hover {
-            background: #388e3c;
-        }
-        .no-errors {
-            text-align: center;
-            padding: 30px;
-            font-size: 18px;
-            color: #4caf50;
-        }
-        .no-errors .icon {
-            font-size: 60px;
-            display: block;
-            margin-bottom: 10px;
-        }
-        .file-info {
-            margin: 15px 0;
-            padding: 15px;
-            background: #e3f2fd;
-            border-radius: 8px;
-            display: none;
-        }
-        .file-info .filename {
-            font-weight: 600;
-            color: #1976d2;
-        }
-        @media (max-width: 768px) {
-            .container {
-                padding: 20px;
-            }
-            .stats {
-                grid-template-columns: 1fr 1fr;
-            }
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>📊 成品庫存開賬資料檢測系統</h1>
-        <p class="subtitle">支援跨頁簽掃描、Barcode 唯一值鎖定及多項合規驗證</p>
-        
-        <div class="upload-area" id="uploadArea">
-            <div class="upload-icon">📁</div>
-            <div class="upload-text">請選擇或拖拽上傳您的 Excel / CSV 檔案</div>
-            <div class="upload-hint">支援 .xlsx, .xls, .csv 格式，最大 50MB</div>
-            <input type="file" id="fileInput" accept=".xlsx,.xls,.csv">
-            <button id="uploadBtn">選擇檔案</button>
-            <div id="fileInfo" class="file-info">
-                <span>📄 已選擇：<span id="fileName" class="filename"></span></span>
-                <button id="analyzeBtn" style="margin-left:15px;background:#4caf50;color:white;border:none;padding:8px 20px;border-radius:20px;cursor:pointer;">開始檢測</button>
-            </div>
-        </div>
-        
-        <div class="loading" id="loading">
-            <div class="spinner"></div>
-            <p>正在檢測中，請稍候...</p>
-        </div>
-        
-        <div class="results" id="results">
-            <h2>📋 檢測報告</h2>
-            
-            <div class="stats" id="stats"></div>
-            
-            <div id="errorSection">
-                <h3>❌ 異常明細清單</h3>
-                <div id="errorContent"></div>
-            </div>
-            
-            <div id="downloadSection" style="text-align:center;margin-top:20px;"></div>
-        </div>
-    </div>
+# app.py
+import os
+import re
+import pandas as pd
+import numpy as np
+from flask import Flask, render_template, request, send_file, jsonify
+from werkzeug.utils import secure_filename
+from datetime import datetime
+import openpyxl
+from io import BytesIO
+import tempfile
 
-    <script>
-        const uploadArea = document.getElementById('uploadArea');
-        const fileInput = document.getElementById('fileInput');
-        const uploadBtn = document.getElementById('uploadBtn');
-        const fileInfo = document.getElementById('fileInfo');
-        const fileName = document.getElementById('fileName');
-        const analyzeBtn = document.getElementById('analyzeBtn');
-        const loading = document.getElementById('loading');
-        const results = document.getElementById('results');
-        const stats = document.getElementById('stats');
-        const errorContent = document.getElementById('errorContent');
-        const downloadSection = document.getElementById('downloadSection');
-        let selectedFile = null;
+app = Flask(__name__)
+app.config['UPLOAD_FOLDER'] = 'uploads'
+app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max
+app.secret_key = 'your-secret-key-here'
 
-        // 點擊按鈕觸發檔案選擇
-        uploadBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            fileInput.click();
-        });
+# 確保上傳目錄存在
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
-        // 點擊上傳區域觸發檔案選擇
-        uploadArea.addEventListener('click', () => {
-            fileInput.click();
-        });
+# 定義表頭規則
+HEADER_RULES = {
+    'A': {'name': '可以為空', 'required': False},
+    'B': {'name': 'BARCODE', 'required': True},
+    'C': {'name': 'RFID', 'required': False},
+    'D': {'name': '倉庫代號', 'required': True},
+    'E': {'name': '儲位代號', 'required': True},
+    'F': {'name': '品牌', 'required': True},
+    'G': {'name': 'MODEL_NAME', 'required': True},
+    'H': {'name': 'ARTICLE', 'required': True},
+    'I': {'name': 'COLOR_CODE', 'required': True},
+    'J': {'name': '底模', 'required': False},
+    'K': {'name': 'size', 'required': True},
+    'L': {'name': 'SHOE_KIND', 'required': True},
+    'M': {'name': 'STOCK_QTY', 'required': True},
+    'N': {'name': 'YYMM', 'required': True}
+}
 
-        // 檔案選擇
-        fileInput.addEventListener('change', (e) => {
-            if (e.target.files.length > 0) {
-                selectedFile = e.target.files[0];
-                fileName.textContent = selectedFile.name;
-                fileInfo.style.display = 'block';
-                uploadBtn.textContent = '重新選擇';
-            }
-        });
+# 欄位列號映射
+COLUMN_MAPPING = {
+    'A': 0, 'B': 1, 'C': 2, 'D': 3, 'E': 4,
+    'F': 5, 'G': 6, 'H': 7, 'I': 8, 'J': 9,
+    'K': 10, 'L': 11, 'M': 12, 'N': 13
+}
 
-        // 拖拽功能
-        uploadArea.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            uploadArea.classList.add('dragover');
-        });
+# 定義有效鞋型
+VALID_SHOE_KIND = {'FL', 'FR', 'UL', 'UR', 'BL', 'BR'}
 
-        uploadArea.addEventListener('dragleave', () => {
-            uploadArea.classList.remove('dragover');
-        });
+def validate_year_month(yymm):
+    """驗證YYMM格式"""
+    if not yymm:
+        return False
+    yymm_str = str(yymm).strip()
+    if len(yymm_str) != 4:
+        return False
+    if not yymm_str.isdigit():
+        return False
+    year = int(yymm_str[:2])
+    month = int(yymm_str[2:])
+    if month < 1 or month > 12:
+        return False
+    return True
 
-        uploadArea.addEventListener('drop', (e) => {
-            e.preventDefault();
-            uploadArea.classList.remove('dragover');
-            if (e.dataTransfer.files.length > 0) {
-                selectedFile = e.dataTransfer.files[0];
-                fileName.textContent = selectedFile.name;
-                fileInfo.style.display = 'block';
-                uploadBtn.textContent = '重新選擇';
-                // 自動上傳
-                uploadFile(selectedFile);
-            }
-        });
+def validate_shoe_kind(value):
+    """驗證鞋型格式"""
+    if not value:
+        return False
+    return str(value).strip().upper() in VALID_SHOE_KIND
 
-        // 分析按鈕
-        analyzeBtn.addEventListener('click', () => {
-            if (selectedFile) {
-                uploadFile(selectedFile);
-            }
-        });
+def validate_stock_qty(value):
+    """驗證庫存數量"""
+    try:
+        val = float(value)
+        if val < 0:
+            return False
+        # 檢查是否為0.5的倍數
+        return abs(val * 2 - round(val * 2)) < 0.0001
+    except (ValueError, TypeError):
+        return False
 
-        function uploadFile(file) {
-            const formData = new FormData();
-            formData.append('file', file);
-
-            loading.style.display = 'block';
-            results.style.display = 'none';
-            uploadArea.style.opacity = '0.5';
-
-            fetch('/upload', {
-                method: 'POST',
-                body: formData
+def validate_barcode_unique(df, sheet_name, errors):
+    """驗證BARCODE唯一性"""
+    barcode_col = COLUMN_MAPPING['B']
+    if barcode_col >= len(df.columns):
+        return
+    
+    barcodes = df.iloc[:, barcode_col].dropna()
+    if len(barcodes) == 0:
+        return
+    
+    unique, counts = np.unique(barcodes, return_counts=True)
+    duplicates = unique[counts > 1]
+    
+    for dup in duplicates:
+        duplicate_rows = df[df.iloc[:, barcode_col] == dup].index.tolist()
+        for row in duplicate_rows:
+            errors.append({
+                'sheet': sheet_name,
+                'row': row + 2,
+                'column': 'B',
+                'field': 'BARCODE',
+                'error_type': '資料錯誤',
+                'message': f'BARCODE "{dup}" 有重複值',
+                'suggestion': '請確保BARCODE在檔案內為唯一值',
+                'value': dup
             })
-            .then(response => response.json())
-            .then(data => {
-                loading.style.display = 'none';
-                uploadArea.style.opacity = '1';
-                results.style.display = 'block';
-                
-                if (data.error) {
-                    alert('錯誤：' + data.error);
-                    return;
-                }
-                
-                displayResults(data);
+
+def validate_rfid_unique(df, sheet_name, errors):
+    """驗證RFID唯一性（如果有值）"""
+    rfid_col = COLUMN_MAPPING['C']
+    if rfid_col >= len(df.columns):
+        return
+    
+    rfids = df.iloc[:, rfid_col].dropna()
+    if len(rfids) == 0:
+        return
+    
+    unique, counts = np.unique(rfids, return_counts=True)
+    duplicates = unique[counts > 1]
+    
+    for dup in duplicates:
+        duplicate_rows = df[df.iloc[:, rfid_col] == dup].index.tolist()
+        for row in duplicate_rows:
+            errors.append({
+                'sheet': sheet_name,
+                'row': row + 2,
+                'column': 'C',
+                'field': 'RFID',
+                'error_type': '資料錯誤',
+                'message': f'RFID "{dup}" 有重複值',
+                'suggestion': '如果RFID有值，請確保為檔案內唯一值',
+                'value': dup
             })
-            .catch(error => {
-                loading.style.display = 'none';
-                uploadArea.style.opacity = '1';
-                alert('上傳失敗：' + error.message);
-            });
-        }
 
-        function displayResults(data) {
-            // 顯示統計
-            const errorRate = data.total_records > 0 ? ((data.error_records_count / data.total_records) * 100).toFixed(1) : 0;
-            
-            stats.innerHTML = `
-                <div class="stat-card">
-                    <div class="stat-number">${data.total_records}</div>
-                    <div class="stat-label">📊 總檢測筆數</div>
-                </div>
-                <div class="stat-card success">
-                    <div class="stat-number">${data.total_records - data.error_records_count}</div>
-                    <div class="stat-label">✅ 正確通過筆數</div>
-                </div>
-                <div class="stat-card error">
-                    <div class="stat-number">${data.error_records_count}</div>
-                    <div class="stat-label">❌ 發生異常筆數</div>
-                </div>
-                <div class="stat-card warning">
-                    <div class="stat-number">${data.error_count}</div>
-                    <div class="stat-label">⚠️ 錯誤項目總數</div>
-                </div>
-            `;
+def validate_header(df, sheet_name, errors):
+    """驗證表頭結構"""
+    headers = df.columns.tolist()
+    expected_headers = [rule['name'] for rule in HEADER_RULES.values()]
+    
+    if len(headers) < len(expected_headers):
+        errors.append({
+            'sheet': sheet_name,
+            'row': 1,
+            'column': '-',
+            'field': '表頭結構',
+            'error_type': '表頭結構異常',
+            'message': f'欄位數量不足，預期 {len(expected_headers)} 欄，實際 {len(headers)} 欄',
+            'suggestion': f'請確認表頭包含以下欄位：{", ".join(expected_headers)}',
+            'value': f'實際有 {len(headers)} 欄'
+        })
+        return False
+    
+    for col_letter, rule in HEADER_RULES.items():
+        col_idx = COLUMN_MAPPING[col_letter]
+        if col_idx >= len(headers):
+            errors.append({
+                'sheet': sheet_name,
+                'row': 1,
+                'column': col_letter,
+                'field': rule['name'],
+                'error_type': '表頭結構異常',
+                'message': f'缺少欄位 "{rule["name"]}"',
+                'suggestion': f'請在 {col_letter} 欄添加 "{rule["name"]}"',
+                'value': '缺少此欄'
+            })
+            continue
+        
+        actual_header = str(headers[col_idx]).strip()
+        expected = rule['name']
+        if actual_header != expected:
+            if rule['required'] or (actual_header != '' and actual_header != expected):
+                errors.append({
+                    'sheet': sheet_name,
+                    'row': 1,
+                    'column': col_letter,
+                    'field': expected,
+                    'error_type': '表頭結構異常',
+                    'message': f'欄位名稱不符，預期 "{expected}"，實際 "{actual_header}"',
+                    'suggestion': f'請將 {col_letter} 欄改為 "{expected}"',
+                    'value': actual_header
+                })
+    
+    return True
 
-            // 顯示錯誤內容
-            const errorSection = document.getElementById('errorSection');
+def validate_data(df, sheet_name, errors):
+    """驗證資料內容"""
+    if len(df) == 0:
+        return
+    
+    for idx, row in df.iterrows():
+        excel_row = idx + 2
+        
+        for col_letter, rule in HEADER_RULES.items():
+            col_idx = COLUMN_MAPPING[col_letter]
+            if col_idx >= len(df.columns):
+                continue
             
-            if (!data.has_errors || data.errors.length === 0) {
-                errorContent.innerHTML = `
-                    <div class="no-errors">
-                        <span class="icon">🎉</span>
-                        <p><strong>恭喜！未發現異常</strong></p>
-                        <p style="color:#666;font-size:14px;margin-top:10px;">所有資料皆通過檢測</p>
-                    </div>
-                `;
-                errorSection.querySelector('h3').textContent = '✅ 檢測通過';
-                errorSection.className = 'error-section success';
-            } else {
-                errorSection.className = 'error-section';
-                let tableHtml = `
-                    <div class="error-table-wrapper">
-                        <table class="error-table">
-                            <thead>
-                                <tr>
-                                    <th>頁簽名稱</th>
-                                    <th>EXCEL 列數</th>
-                                    <th>EXCEL 欄數</th>
-                                    <th>異常欄位</th>
-                                    <th>錯誤類型</th>
-                                    <th>錯誤描述</th>
-                                    <th>系統建議</th>
-                                    <th>實際抓取內容</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                `;
-                
-                data.errors.forEach(err => {
-                    tableHtml += `
-                        <tr class="error-row">
-                            <td>${err.sheet || '-'}</td>
-                            <td>${err.row || '-'}</td>
-                            <td>${err.column || '-'}</td>
-                            <td>${err.field || '-'}</td>
-                            <td><strong>${err.error_type || '-'}</strong></td>
-                            <td>${err.message || '-'}</td>
-                            <td style="color:#1976d2;">${err.suggestion || '-'}</td>
-                            <td>${err.value || '-'}</td>
-                        </tr>
-                    `;
-                });
-                
-                tableHtml += `</tbody></table></div>`;
-                errorContent.innerHTML = tableHtml;
-                
-                if (data.errors.length > 1000) {
-                    errorContent.innerHTML += `<p style="color:#ff9800;margin-top:10px;">⚠️ 顯示前 1000 筆錯誤，完整清單請下載錯誤報表</p>`;
-                }
-                
-                // 顯示下載按鈕
-                if (data.error_file) {
-                    downloadSection.innerHTML = `
-                        <a href="${data.error_file}" class="download-btn" download>
-                            📥 匯出錯誤清單 (Excel)
-                        </a>
-                    `;
-                }
-            }
+            value = row.iloc[col_idx] if col_idx < len(row) else np.nan
+            field_name = rule['name']
+            
+            if rule['required']:
+                if pd.isna(value) or str(value).strip() == '':
+                    errors.append({
+                        'sheet': sheet_name,
+                        'row': excel_row,
+                        'column': col_letter,
+                        'field': field_name,
+                        'error_type': '資料錯誤',
+                        'message': f'{field_name} 不能為空',
+                        'suggestion': f'請在 {col_letter} 欄填入 {field_name} 資料',
+                        'value': '空值'
+                    })
+                    continue
+            
+            if field_name == '品牌':
+                if not pd.isna(value) and str(value).strip() != '13':
+                    errors.append({
+                        'sheet': sheet_name,
+                        'row': excel_row,
+                        'column': col_letter,
+                        'field': field_name,
+                        'error_type': '資料錯誤',
+                        'message': f'品牌值應為 "13"',
+                        'suggestion': '請將品牌欄位設為 "13"',
+                        'value': str(value)
+                    })
+            
+            elif field_name == 'SHOE_KIND':
+                if not pd.isna(value) and not validate_shoe_kind(value):
+                    errors.append({
+                        'sheet': sheet_name,
+                        'row': excel_row,
+                        'column': col_letter,
+                        'field': field_name,
+                        'error_type': '資料錯誤',
+                        'message': f'鞋型 "{value}" 不在允許清單中',
+                        'suggestion': f'請使用以下任一值：{", ".join(VALID_SHOE_KIND)}',
+                        'value': str(value)
+                    })
+            
+            elif field_name == 'STOCK_QTY':
+                if not pd.isna(value):
+                    if not validate_stock_qty(value):
+                        errors.append({
+                            'sheet': sheet_name,
+                            'row': excel_row,
+                            'column': col_letter,
+                            'field': field_name,
+                            'error_type': '資料錯誤',
+                            'message': f'庫存數量 "{value}" 格式錯誤',
+                            'suggestion': '庫存數量必須為正數且為0.5的倍數（如：1, 1.5, 2）',
+                            'value': str(value)
+                        })
+            
+            elif field_name == 'YYMM':
+                if not pd.isna(value):
+                    if not validate_year_month(value):
+                        errors.append({
+                            'sheet': sheet_name,
+                            'row': excel_row,
+                            'column': col_letter,
+                            'field': field_name,
+                            'error_type': '資料錯誤',
+                            'message': f'YYMM "{value}" 格式錯誤',
+                            'suggestion': 'YYMM必須為4位數字，前2位為年，後2位為月（如：2407）',
+                            'value': str(value)
+                        })
+
+def analyze_file(file_path):
+    """分析上傳的檔案"""
+    errors = []
+    total_records = 0
+    error_records = set()
+    
+    try:
+        excel_file = pd.ExcelFile(file_path)
+        sheet_names = excel_file.sheet_names
+        
+        for sheet_name in sheet_names:
+            df = pd.read_excel(file_path, sheet_name=sheet_name, header=0)
+            
+            if len(df) == 0:
+                errors.append({
+                    'sheet': sheet_name,
+                    'row': 1,
+                    'column': '-',
+                    'field': '空白工作表',
+                    'error_type': '資料錯誤',
+                    'message': '工作表為空',
+                    'suggestion': '請確認資料已正確填入',
+                    'value': '空工作表'
+                })
+                continue
+            
+            total_records += len(df)
+            
+            validate_header(df, sheet_name, errors)
+            validate_barcode_unique(df, sheet_name, errors)
+            validate_rfid_unique(df, sheet_name, errors)
+            validate_data(df, sheet_name, errors)
+        
+    except Exception as e:
+        errors.append({
+            'sheet': '系統錯誤',
+            'row': '-',
+            'column': '-',
+            'field': '檔案讀取',
+            'error_type': '系統錯誤',
+            'message': f'讀取檔案時發生錯誤：{str(e)}',
+            'suggestion': '請確認檔案格式正確且未損毀',
+            'value': str(e)
+        })
+    
+    error_count = len(errors)
+    error_records_count = len(set(f"{e['sheet']}-{e['row']}" for e in errors if e['row'] != 1 and e['row'] != '-'))
+    
+    return {
+        'total_records': total_records,
+        'error_count': error_count,
+        'error_records_count': error_records_count,
+        'errors': errors
+    }
+
+def generate_error_excel(errors):
+    """產生錯誤清單Excel檔案"""
+    if not errors:
+        return None
+    
+    df_errors = pd.DataFrame(errors)
+    
+    df_errors = df_errors.rename(columns={
+        'sheet': '頁簽名稱',
+        'row': 'EXCEL 列數',
+        'column': 'EXCEL 欄數',
+        'field': '異常欄位',
+        'error_type': '錯誤類型',
+        'message': '錯誤描述',
+        'suggestion': '系統建議',
+        'value': '實際抓取內容'
+    })
+    
+    columns_order = ['頁簽名稱', 'EXCEL 列數', 'EXCEL 欄數', '異常欄位', '錯誤類型', '錯誤描述', '系統建議', '實際抓取內容']
+    df_errors = df_errors[columns_order]
+    
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df_errors.to_excel(writer, sheet_name='錯誤清單', index=False)
+        
+        worksheet = writer.sheets['錯誤清單']
+        for column in worksheet.columns:
+            max_length = 0
+            column_letter = column[0].column_letter
+            for cell in column:
+                try:
+                    if len(str(cell.value)) > max_length:
+                        max_length = len(str(cell.value))
+                except:
+                    pass
+            adjusted_width = min(max_length + 2, 50)
+            worksheet.column_dimensions[column_letter].width = adjusted_width
+    
+    output.seek(0)
+    return output
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+@app.route('/upload', methods=['POST'])
+def upload_file():
+    if 'file' not in request.files:
+        return jsonify({'error': '沒有選擇檔案'}), 400
+    
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': '沒有選擇檔案'}), 400
+    
+    if not file.filename.endswith(('.xlsx', '.xls', '.csv')):
+        return jsonify({'error': '檔案格式不支援，請上傳 Excel (.xlsx, .xls) 或 CSV 檔案'}), 400
+    
+    try:
+        filename = secure_filename(file.filename)
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(filepath)
+        
+        result = analyze_file(filepath)
+        
+        error_excel = generate_error_excel(result['errors'])
+        
+        response = {
+            'total_records': result['total_records'],
+            'error_count': result['error_count'],
+            'error_records_count': result['error_records_count'],
+            'has_errors': result['error_count'] > 0,
+            'errors': result['errors'][:1000]
         }
-    </script>
-</body>
-</html>
+        
+        if error_excel:
+            error_filename = f"error_list_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            error_path = os.path.join(app.config['UPLOAD_FOLDER'], error_filename)
+            with open(error_path, 'wb') as f:
+                f.write(error_excel.getvalue())
+            response['error_file'] = f'/download/{error_filename}'
+        
+        os.remove(filepath)
+        
+        return jsonify(response)
+        
+    except Exception as e:
+        return jsonify({'error': f'處理檔案時發生錯誤：{str(e)}'}), 500
+
+@app.route('/download/<filename>')
+def download_file(filename):
+    try:
+        return send_file(os.path.join(app.config['UPLOAD_FOLDER'], filename), 
+                        as_attachment=True, 
+                        download_name=filename)
+    except Exception as e:
+        return f'下載失敗：{str(e)}', 404
+
+if __name__ == '__main__':
+    app.run(debug=True, host='0.0.0.0', port=5000)
